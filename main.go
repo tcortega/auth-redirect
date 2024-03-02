@@ -1,12 +1,14 @@
 package authredirect
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/go-resty/resty/v2"
+	"io"
 	"net/http"
 	"time"
 )
@@ -31,7 +33,7 @@ func (AuthRedirect) CaddyModule() caddy.ModuleInfo {
 
 func (f *AuthRedirect) Provision(c caddy.Context) error {
 	f.restyClient = resty.New()
-	f.restyClient.SetTimeout(5 * time.Second)
+	f.restyClient.SetTimeout(8 * time.Second)
 	f.restyClient.SetRedirectPolicy(resty.NoRedirectPolicy())
 
 	c.Logger(f).Info(fmt.Sprintf("AuthRedirect: %s", f.Url))
@@ -51,7 +53,11 @@ func (f AuthRedirect) ServeHTTP(w http.ResponseWriter, clientReq *http.Request, 
 	var err error
 	urlParameters := clientReq.URL.Query().Encode()
 	if clientReq.Method == http.MethodPost {
-		resp, err = f.restyClient.R().SetHeaders(authReqHeaders).SetBody(clientReq.Body).Post(f.Url + "?" + urlParameters)
+		buf := new(bytes.Buffer)
+		_, _ = io.Copy(buf, clientReq.Body)
+		clientReq.Body = io.NopCloser(buf)
+
+		resp, err = f.restyClient.R().SetHeaders(authReqHeaders).SetBody(buf.Bytes()).Post(f.Url + "?" + urlParameters)
 	} else {
 		resp, err = f.restyClient.R().SetHeaders(authReqHeaders).Get(f.Url + "?" + urlParameters)
 	}
